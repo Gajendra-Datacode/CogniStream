@@ -44,6 +44,7 @@ def fetch_data(endpoint):
 # ==========================================
 
 try:
+
     if st.button("🔄 Refresh Dashboard"):
         st.cache_data.clear()
         st.rerun()
@@ -51,6 +52,9 @@ try:
     developers = fetch_data("developers")
     events = fetch_data("event-summary")
     activity = fetch_data("activity")
+    cognitive_data = fetch_data("cognitive-load")
+
+    # Convert API responses into DataFrames
 
     developer_df = pd.DataFrame(developers)
     event_df = pd.DataFrame(events)
@@ -58,17 +62,27 @@ try:
     activity_records = activity.get("events", [])
     activity_df = pd.DataFrame(activity_records)
 
+    cognitive_records = cognitive_data.get(
+        "cognitive_load", []
+    )
+    cognitive_df = pd.DataFrame(cognitive_records)
+
     # ======================================
     # 5. DEVELOPER FILTER
     # ======================================
 
     st.subheader("🔎 Developer Filter")
 
-    if not developer_df.empty and "developer_id" in developer_df.columns:
+    if (
+        not developer_df.empty
+        and "developer_id" in developer_df.columns
+    ):
 
         developer_list = (
             ["All Developers"]
-            + developer_df["developer_id"].dropna().tolist()
+            + developer_df["developer_id"]
+            .dropna()
+            .tolist()
         )
 
         selected_developer = st.selectbox(
@@ -79,21 +93,23 @@ try:
         if selected_developer != "All Developers":
 
             filtered_developer_df = developer_df[
-                developer_df["developer_id"] == selected_developer
+                developer_df["developer_id"]
+                == selected_developer
             ]
 
-            if "developer_id" in activity_df.columns:
-                filtered_activity_df = activity_df[
-                    activity_df["developer_id"] == selected_developer
-                ]
-            else:
-                filtered_activity_df = activity_df.copy()
+            filtered_activity_df = activity_df[
+                activity_df["developer_id"]
+                == selected_developer
+            ] if "developer_id" in activity_df.columns else activity_df.copy()
 
         else:
+
             filtered_developer_df = developer_df.copy()
             filtered_activity_df = activity_df.copy()
 
     else:
+
+        selected_developer = "All Developers"
         filtered_developer_df = developer_df.copy()
         filtered_activity_df = activity_df.copy()
 
@@ -101,7 +117,11 @@ try:
     # 6. KPI METRICS
     # ======================================
 
-    total_events = len(filtered_activity_df) if not filtered_activity_df.empty else 0
+    total_events = (
+        len(filtered_activity_df)
+        if not filtered_activity_df.empty
+        else 0
+    )
 
     total_developers = len(filtered_developer_df)
 
@@ -120,7 +140,7 @@ try:
     st.markdown("---")
 
     # ======================================
-    # 7. DEVELOPER ACTIVITY CHART
+    # 7. DEVELOPER ACTIVITY
     # ======================================
 
     st.subheader("👨‍💻 Developer Activity")
@@ -154,7 +174,10 @@ try:
 
     st.subheader("📊 Event Distribution")
 
-    if not filtered_activity_df.empty and "event_type" in filtered_activity_df.columns:
+    if (
+        not filtered_activity_df.empty
+        and "event_type" in filtered_activity_df.columns
+    ):
 
         event_distribution = (
             filtered_activity_df["event_type"]
@@ -181,9 +204,6 @@ try:
             use_container_width=True
         )
 
-    elif not event_df.empty:
-        st.info("No event-level records available for this filter.")
-
     else:
         st.info("No event data available.")
 
@@ -205,13 +225,125 @@ try:
         st.info("No activity records available.")
 
     # ======================================
-    # 10. FOOTER
+    # 10. COGNITIVE LOAD ANALYSIS
+    # ======================================
+
+    st.markdown("---")
+
+    st.subheader("🧠 Cognitive Load Analysis")
+
+    if not cognitive_df.empty:
+
+        filtered_cognitive_df = cognitive_df.copy()
+
+        if (
+            selected_developer != "All Developers"
+            and "developer_id" in cognitive_df.columns
+        ):
+
+            filtered_cognitive_df = cognitive_df[
+                cognitive_df["developer_id"]
+                == selected_developer
+            ]
+
+        if not filtered_cognitive_df.empty:
+
+            # Focus and interruption metrics
+
+            focus_avg = filtered_cognitive_df[
+                "focus_percentage"
+            ].mean()
+
+            interruption_avg = filtered_cognitive_df[
+                "interruption_percentage"
+            ].mean()
+
+            col1, col2 = st.columns(2)
+
+            col1.metric(
+                "Average Focus",
+                f"{focus_avg:.2f}%"
+            )
+
+            col2.metric(
+                "Average Interruptions",
+                f"{interruption_avg:.2f}%"
+            )
+
+            # Focus percentage chart
+
+            st.subheader("🎯 Focus Percentage by Developer")
+
+            fig3 = px.bar(
+                filtered_cognitive_df,
+                x="developer_id",
+                y="focus_percentage",
+                color="developer_id",
+                title="Developer Focus Performance",
+                labels={
+                    "developer_id": "Developer",
+                    "focus_percentage": "Focus Percentage"
+                },
+                template="plotly_dark"
+            )
+
+            st.plotly_chart(
+                fig3,
+                use_container_width=True
+            )
+
+            # Interruption percentage chart
+
+            st.subheader("⚡ Interruption Percentage by Developer")
+
+            fig4 = px.bar(
+                filtered_cognitive_df,
+                x="developer_id",
+                y="interruption_percentage",
+                color="developer_id",
+                title="Developer Interruption Analysis",
+                labels={
+                    "developer_id": "Developer",
+                    "interruption_percentage": "Interruption Percentage"
+                },
+                template="plotly_dark"
+            )
+
+            st.plotly_chart(
+                fig4,
+                use_container_width=True
+            )
+
+            # Cognitive load summary table
+
+            st.subheader("📊 Cognitive Load Summary")
+
+            st.dataframe(
+                filtered_cognitive_df,
+                use_container_width=True,
+                hide_index=True
+            )
+
+        else:
+            st.info("No cognitive load data for this developer.")
+
+    else:
+        st.warning("Cognitive load data is not available.")
+
+    # ======================================
+    # 11. FOOTER
     # ======================================
 
     st.markdown("---")
 
     st.caption(
         "CogniStream | Developer Analytics Platform"
+    )
+
+    st.caption(
+        "Note: Focus and interruption percentages are "
+        "event-based indicators, not direct measurements "
+        "of a developer's mental state."
     )
 
 except requests.exceptions.ConnectionError:

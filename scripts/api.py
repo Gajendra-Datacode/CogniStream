@@ -12,6 +12,7 @@ app = FastAPI(
 # Project paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_FILE = BASE_DIR / "data" / "activity_events.csv"
+COGNITIVE_LOAD_FILE = BASE_DIR / "data" / "cognitive_load_summary.csv"
 
 
 @app.get("/")
@@ -30,7 +31,6 @@ def health():
 
 @app.get("/developers")
 def get_developers():
-
     if not DATA_FILE.exists():
         return {"error": "Activity data file not found"}
 
@@ -47,7 +47,6 @@ def get_developers():
 
 @app.get("/event-summary")
 def event_summary():
-
     if not DATA_FILE.exists():
         return {"error": "Activity data file not found"}
 
@@ -64,7 +63,6 @@ def event_summary():
 
 @app.get("/activity")
 def get_activity():
-
     if not DATA_FILE.exists():
         return {"error": "Activity data file not found"}
 
@@ -73,4 +71,17 @@ def get_activity():
     return {
         "total_events": df.height,
         "events": df.head(20).to_dicts()
+    }
+
+
+@app.get("/cognitive-load")
+def get_cognitive_load():
+    if not COGNITIVE_LOAD_FILE.exists():
+        return {"error": "Cognitive load report not found"}
+
+    df = pl.read_csv(COGNITIVE_LOAD_FILE)
+
+    return {
+        "total_developers": df.height,
+        "cognitive_load": df.to_dicts()
     }
