@@ -1,4 +1,4 @@
 developer_id,total_events,focus_events,interruption_events,focus_percentage,interruption_percentage
-DEV001,30,12,18,40.0,60.0
-DEV002,30,15,15,50.0,50.0
-DEV003,30,18,12,60.0,40.0
+DEV001,30,25,5,83.33,16.67
+DEV002,27,22,5,81.48,18.52
+DEV003,27,22,5,81.48,18.52
