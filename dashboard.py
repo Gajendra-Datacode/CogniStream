@@ -1,4 +1,3 @@
-
 import streamlit as st
 import requests
 import pandas as pd
@@ -18,17 +17,7 @@ API_URL = "http://127.0.0.1:8000"
 
 
 # ==========================================
-# 2. DASHBOARD HEADER
-# ==========================================
-
-st.title("🧠 CogniStream")
-st.subheader("Developer Flow-State & Cognitive Load Analytics")
-
-st.markdown("---")
-
-
-# ==========================================
-# 3. API DATA FETCHING
+# 2. HELPER FUNCTIONS
 # ==========================================
 
 @st.cache_data(ttl=10)
@@ -42,7 +31,6 @@ def fetch_data(endpoint):
 
 
 def download_csv(dataframe, filename, label):
-    """Display a CSV download button."""
     if not dataframe.empty:
         csv_data = dataframe.to_csv(index=False).encode("utf-8")
 
@@ -58,13 +46,21 @@ def download_csv(dataframe, filename, label):
 
 
 def get_boolean_series(series):
-    """Convert common Boolean representations into True/False."""
     return (
         series.astype(str)
         .str.strip()
         .str.lower()
         .isin(["true", "1", "yes"])
     )
+
+
+# ==========================================
+# 3. DASHBOARD HEADER
+# ==========================================
+
+st.title("🧠 CogniStream")
+st.subheader("Developer Flow-State & Cognitive Load Analytics")
+st.markdown("---")
 
 
 # ==========================================
@@ -113,6 +109,7 @@ try:
             ["All Developers"]
             + developer_df["developer_id"]
             .dropna()
+            .astype(str)
             .tolist()
         )
 
@@ -145,18 +142,16 @@ try:
     # 6. KPI METRICS
     # ======================================
 
-    total_events = len(filtered_activity_df)
-    total_developers = len(filtered_developer_df)
+    total_events = len(activity_df)
+    total_developers = len(developer_df)
 
     if (
-        not filtered_activity_df.empty
-        and "event_type" in filtered_activity_df.columns
+        not activity_df.empty
+        and "event_type" in activity_df.columns
     ):
-        total_event_types = (
-            filtered_activity_df["event_type"].nunique()
-        )
+        total_event_types = activity_df["event_type"].nunique()
     else:
-        total_event_types = len(event_df)
+        total_event_types = 0
 
     col1, col2, col3 = st.columns(3)
 
@@ -276,17 +271,34 @@ try:
                 cognitive_df["developer_id"] == selected_developer
             ].copy()
 
-        if not filtered_cognitive_df.empty:
+        required_cognitive_columns = [
+            "developer_id",
+            "focus_percentage",
+            "interruption_percentage"
+        ]
 
-            focus_avg = pd.to_numeric(
+        if all(
+            col in filtered_cognitive_df.columns
+            for col in required_cognitive_columns
+        ) and not filtered_cognitive_df.empty:
+
+            filtered_cognitive_df["focus_percentage"] = pd.to_numeric(
                 filtered_cognitive_df["focus_percentage"],
                 errors="coerce"
-            ).mean()
+            )
 
-            interruption_avg = pd.to_numeric(
+            filtered_cognitive_df["interruption_percentage"] = pd.to_numeric(
                 filtered_cognitive_df["interruption_percentage"],
                 errors="coerce"
-            ).mean()
+            )
+
+            focus_avg = filtered_cognitive_df[
+                "focus_percentage"
+            ].mean()
+
+            interruption_avg = filtered_cognitive_df[
+                "interruption_percentage"
+            ].mean()
 
             col1, col2 = st.columns(2)
 
@@ -347,7 +359,7 @@ try:
             )
 
         else:
-            st.info("No cognitive load data for this developer.")
+            st.info("Required cognitive-load columns or records are missing.")
 
     else:
         st.warning("Cognitive load data is not available.")
@@ -368,7 +380,10 @@ try:
                 flow_df["developer_id"] == selected_developer
             ].copy()
 
-        if not filtered_flow_df.empty:
+        if (
+            not filtered_flow_df.empty
+            and "duration_minutes" in filtered_flow_df.columns
+        ):
 
             filtered_flow_df["duration_minutes"] = pd.to_numeric(
                 filtered_flow_df["duration_minutes"],
@@ -401,9 +416,7 @@ try:
                     "duration_minutes"
                 ].max()
 
-                deep_focus_sessions = int(
-                    deep_focus_mask.sum()
-                )
+                deep_focus_sessions = int(deep_focus_mask.sum())
 
                 developers_with_sessions = (
                     valid_sessions["developer_id"].nunique()
@@ -413,10 +426,7 @@ try:
 
                 col1, col2, col3, col4 = st.columns(4)
 
-                col1.metric(
-                    "Total Focus Sessions",
-                    total_sessions
-                )
+                col1.metric("Total Focus Sessions", total_sessions)
 
                 col2.metric(
                     "Average Session Duration",
@@ -476,11 +486,13 @@ try:
                 ]
 
                 if not deep_focus_df.empty:
+
                     st.dataframe(
                         deep_focus_df,
                         use_container_width=True,
                         hide_index=True
                     )
+
                 else:
                     st.info(
                         "No sessions have reached the 90-minute threshold yet."
@@ -504,7 +516,7 @@ try:
                 st.warning("No valid session duration data available.")
 
         else:
-            st.info("No flow sessions available for this developer.")
+            st.info("No valid flow-session records available.")
 
     else:
         st.warning("Flow-state session data is not available.")
@@ -580,12 +592,11 @@ try:
             "focus_percentage",
             "interruption_percentage"
         ]:
+
             productivity_df[column] = pd.to_numeric(
                 productivity_df[column],
                 errors="coerce"
             ).fillna(0)
-
-        # Normalize productivity metrics
 
         productivity_df["focus_score"] = (
             productivity_df["focus_percentage"].clip(0, 100)
@@ -600,18 +611,22 @@ try:
         ].max()
 
         if max_deep_focus > 0:
+
             productivity_df["deep_focus_score"] = (
                 productivity_df["deep_focus_sessions"]
                 / max_deep_focus * 100
             )
+
         else:
             productivity_df["deep_focus_score"] = 0
 
         if max_events > 0:
+
             productivity_df["activity_score"] = (
                 productivity_df["total_events"]
                 / max_events * 100
             )
+
         else:
             productivity_df["activity_score"] = 0
 
@@ -621,16 +636,12 @@ try:
             ].clip(0, 100)
         )
 
-        # Weighted productivity score
-
         productivity_df["productivity_score"] = (
             productivity_df["focus_score"] * 0.40
             + productivity_df["deep_focus_score"] * 0.30
             + productivity_df["activity_score"] * 0.20
             + productivity_df["low_interruption_score"] * 0.10
         )
-
-        # Rank all developers
 
         productivity_df = productivity_df.sort_values(
             "productivity_score",
@@ -643,12 +654,12 @@ try:
             range(1, len(productivity_df) + 1)
         )
 
-        # Filter displayed ranking
-
         if selected_developer != "All Developers":
+
             display_productivity_df = productivity_df[
                 productivity_df["developer_id"] == selected_developer
             ].copy()
+
         else:
             display_productivity_df = productivity_df.copy()
 
@@ -674,28 +685,30 @@ try:
 
         st.subheader("📊 Productivity Score Comparison")
 
-        fig6 = px.bar(
-            display_productivity_df,
-            x="developer_id",
-            y="productivity_score",
-            color="developer_id",
-            title="Developer Productivity Score",
-            labels={
-                "developer_id": "Developer",
-                "productivity_score": "Productivity Score"
-            },
-            template="plotly_dark"
-        )
+        if not display_productivity_df.empty:
 
-        fig6.update_traces(
-            texttemplate="%{y:.2f}",
-            textposition="outside"
-        )
+            fig6 = px.bar(
+                display_productivity_df,
+                x="developer_id",
+                y="productivity_score",
+                color="developer_id",
+                title="Developer Productivity Score",
+                labels={
+                    "developer_id": "Developer",
+                    "productivity_score": "Productivity Score"
+                },
+                template="plotly_dark"
+            )
 
-        st.plotly_chart(
-            fig6,
-            use_container_width=True
-        )
+            fig6.update_traces(
+                texttemplate="%{y:.2f}",
+                textposition="outside"
+            )
+
+            st.plotly_chart(
+                fig6,
+                use_container_width=True
+            )
 
         st.caption(
             "Illustrative score: Focus 40% + Deep Focus 30% "
@@ -703,8 +716,6 @@ try:
             "This ranking uses synthetic activity data and "
             "does not directly measure actual productivity."
         )
-
-        # Full ranking export, not affected by developer filter
 
         st.subheader("📥 Download Productivity Report")
 
@@ -735,10 +746,12 @@ try:
     )
 
     if "total_events" in developer_df.columns:
+
         summary_total_events = pd.to_numeric(
             developer_df["total_events"],
             errors="coerce"
         ).fillna(0).sum()
+
     else:
         summary_total_events = 0
 
@@ -751,11 +764,13 @@ try:
         not flow_df.empty
         and "qualified_90_min" in flow_df.columns
     ):
+
         summary_deep_focus = int(
             get_boolean_series(
                 flow_df["qualified_90_min"]
             ).sum()
         )
+
     else:
         summary_deep_focus = 0
 
@@ -810,9 +825,7 @@ try:
 
     st.markdown("---")
 
-    st.caption(
-        "CogniStream | Developer Analytics Platform"
-    )
+    st.caption("CogniStream | Developer Analytics Platform")
 
     st.caption(
         "Focus and interruption percentages are event-based indicators, "

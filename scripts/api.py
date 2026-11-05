@@ -150,3 +150,17 @@ def get_flow_sessions():
         "total_sessions": df.height,
         "flow_sessions": df.to_dicts()
     }
+@app.get("/context-switching")
+def get_context_switching():
+    file_path = (
+        Path(__file__).resolve().parent.parent
+        / "data"
+        / "context_switching_summary.csv"
+    )
+
+    if not file_path.exists():
+        return []
+
+    data = pl.read_csv(file_path)
+
+    return data.to_dicts()
