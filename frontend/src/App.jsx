@@ -20,7 +20,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // Fetch all dashboard data from FastAPI
+  // Fetch dashboard data from FastAPI
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
@@ -53,7 +53,10 @@ function App() {
         const cognitiveResult = await cognitiveResponse.json()
         const contextResult = await contextResponse.json()
 
-        setDevelopers(developerResult)
+        setDevelopers(
+          Array.isArray(developerResult) ? developerResult : []
+        )
+
         setFlowData(flowResult.flow_sessions || [])
 
         setCognitiveData(
@@ -179,7 +182,7 @@ function App() {
           </span>
         </header>
 
-        {/* Error Message */}
+        {/* API Error */}
         {error && (
           <div className="error-message">
             <strong>API Error:</strong> {error}
@@ -347,6 +350,7 @@ function App() {
 
           </div>
 
+          {/* Cognitive Load Table */}
           {loading ? (
             <p>Loading cognitive load data...</p>
           ) : cognitiveData.length === 0 ? (
@@ -378,6 +382,52 @@ function App() {
               </table>
             </div>
           )}
+
+          {/* Cognitive Load Comparison Chart */}
+          <div className="chart-container">
+
+            <h3>Developer Focus vs Interruption (%)</h3>
+
+            {loading ? (
+              <p>Loading chart data...</p>
+            ) : cognitiveData.length === 0 ? (
+              <p>No chart data available.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart
+                  data={cognitiveData}
+                  margin={{
+                    top: 20,
+                    right: 20,
+                    left: 10,
+                    bottom: 10
+                  }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="developer_id" />
+                  <YAxis domain={[0, 100]} />
+                  <Tooltip />
+                  <Legend />
+
+                  <Bar
+                    dataKey="focus_percentage"
+                    name="Focus Percentage"
+                    fill="#38bdf8"
+                    radius={[5, 5, 0, 0]}
+                  />
+
+                  <Bar
+                    dataKey="interruption_percentage"
+                    name="Interruption Percentage"
+                    fill="#a78bfa"
+                    radius={[5, 5, 0, 0]}
+                  />
+
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+
+          </div>
 
           <p className="section-description">
             These percentages are estimates based on simulated activity events,
@@ -523,43 +573,3 @@ function App() {
 }
 
 export default App
-
-{/* Cognitive Load Comparison Chart */}
-<div className="chart-container">
-
-  <h3>Developer Focus vs Interruption (%)</h3>
-
-  {loading ? (
-    <p>Loading chart data...</p>
-  ) : cognitiveData.length === 0 ? (
-    <p>No chart data available.</p>
-  ) : (
-    <ResponsiveContainer width="100%" height={320}>
-      <BarChart
-        data={cognitiveData}
-        margin={{ top: 20, right: 20, left: 10, bottom: 10 }}
-      >
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="developer_id" />
-        <YAxis domain={[0, 100]} />
-        <Tooltip />
-        <Legend />
-
-        <Bar
-          dataKey="focus_percentage"
-          name="Focus Percentage"
-          fill="#38bdf8"
-          radius={[5, 5, 0, 0]}
-        />
-
-        <Bar
-          dataKey="interruption_percentage"
-          name="Interruption Percentage"
-          fill="#a78bfa"
-          radius={[5, 5, 0, 0]}
-        />
-      </BarChart>
-    </ResponsiveContainer>
-  )}
-
-</div>
