@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from typing import Optional
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import polars as pl
@@ -11,7 +12,7 @@ from scripts.clickhouse_client import get_clickhouse_client
 app = FastAPI(
     title="CogniStream API",
     description="Developer Activity, Flow-State and Cognitive Load Analytics",
-    version="1.2.0"
+    version="1.3.0"
 )
 
 app.add_middleware(
@@ -27,21 +28,17 @@ app.add_middleware(
 # ============================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+COGNITIVE_LOAD_FILE = BASE_DIR / "data" / "cognitive_load_summary.csv"
+FLOW_SESSIONS_FILE = BASE_DIR / "data" / "flow_sessions.csv"
+CONTEXT_SWITCHING_FILE = BASE_DIR / "data" / "context_switching_summary.csv"
 
-COGNITIVE_LOAD_FILE = (
-    BASE_DIR / "data" / "cognitive_load_summary.csv"
-)
-
-FLOW_SESSIONS_FILE = (
-    BASE_DIR / "data" / "flow_sessions.csv"
-)
-
-CONTEXT_SWITCHING_FILE = (
-    BASE_DIR / "data" / "context_switching_summary.csv"
-)
+def _normalize_dev_filter(developer_id: Optional[str]) -> Optional[str]:
+    if not developer_id or developer_id.strip().lower() == "all":
+        return None
+    return developer_id.strip()
 
 # ============================================
-# 3. HOME ENDPOINT
+# 3. HOME & HEALTH ENDPOINTS
 # ============================================
 
 @app.get("/")
@@ -51,10 +48,6 @@ def home():
         "message": "Developer Analytics API is running!",
         "storage": "ClickHouse (cognitstream.activity_events)"
     }
-
-# ============================================
-# 4. HEALTH CHECK
-# ============================================
 
 @app.get("/health")
 def health():
@@ -67,7 +60,7 @@ def health():
         return {"status": "degraded", "clickhouse": "disconnected", "error": str(exc)}
 
 # ============================================
-# 5. DEVELOPER ANALYTICS (CLICKHOUSE)
+# 4. DEVELOPER ANALYTICS (CLICKHOUSE)
 # ============================================
 
 @app.get("/developers")
@@ -93,23 +86,34 @@ def get_developers():
         raise HTTPException(status_code=500, detail=f"ClickHouse query failed: {exc}")
 
 # ============================================
-# 6. EVENT SUMMARY (CLICKHOUSE)
+# 5. EVENT SUMMARY (CLICKHOUSE)
 # ============================================
 
 @app.get("/event-summary")
-def event_summary():
+def event_summary(developer_id: Optional[str] = Query(default=None)):
+    dev_id = _normalize_dev_filter(developer_id)
     try:
         client = get_clickhouse_client()
-        result = client.query(
-            """
-            SELECT
-                event_type,
-                count() AS total_events
-            FROM cognitstream.activity_events
-            GROUP BY event_type
-            ORDER BY event_type
-            """
-        )
+        if dev_id:
+            result = client.query(
+                """
+                SELECT event_type, count() AS total_events
+                FROM cognitstream.activity_events
+                WHERE developer_id = {dev_id:String}
+                GROUP BY event_type
+                ORDER BY event_type
+                """,
+                parameters={"dev_id": dev_id},
+            )
+        else:
+            result = client.query(
+                """
+                SELECT event_type, count() AS total_events
+                FROM cognitstream.activity_events
+                GROUP BY event_type
+                ORDER BY event_type
+                """
+            )
         client.close()
         return [
             {"event_type": row[0], "total_events": int(row[1])}
@@ -119,26 +123,49 @@ def event_summary():
         raise HTTPException(status_code=500, detail=f"ClickHouse query failed: {exc}")
 
 # ============================================
-# 7. RECENT ACTIVITY (CLICKHOUSE)
+# 6. RECENT ACTIVITY (CLICKHOUSE)
 # ============================================
 
 @app.get("/activity")
-def get_activity():
+def get_activity(developer_id: Optional[str] = Query(default=None)):
+    dev_id = _normalize_dev_filter(developer_id)
     try:
         client = get_clickhouse_client()
-        total_events = int(client.command("SELECT count() FROM cognitstream.activity_events"))
-        result = client.query(
-            """
-            SELECT
-                developer_id,
-                event_type,
-                toString(timestamp) AS timestamp,
-                source
-            FROM cognitstream.activity_events
-            ORDER BY timestamp ASC
-            LIMIT 20
-            """
-        )
+        if dev_id:
+            total_events = int(
+                client.command(
+                    "SELECT count() FROM cognitstream.activity_events WHERE developer_id = {dev_id:String}",
+                    parameters={"dev_id": dev_id},
+                )
+            )
+            result = client.query(
+                """
+                SELECT
+                    developer_id,
+                    event_type,
+                    toString(timestamp) AS timestamp,
+                    source
+                FROM cognitstream.activity_events
+                WHERE developer_id = {dev_id:String}
+                ORDER BY timestamp ASC
+                LIMIT 20
+                """,
+                parameters={"dev_id": dev_id},
+            )
+        else:
+            total_events = int(client.command("SELECT count() FROM cognitstream.activity_events"))
+            result = client.query(
+                """
+                SELECT
+                    developer_id,
+                    event_type,
+                    toString(timestamp) AS timestamp,
+                    source
+                FROM cognitstream.activity_events
+                ORDER BY timestamp ASC
+                LIMIT 20
+                """
+            )
         client.close()
         events = [
             {
@@ -157,15 +184,18 @@ def get_activity():
         raise HTTPException(status_code=500, detail=f"ClickHouse query failed: {exc}")
 
 # ============================================
-# 8. COGNITIVE LOAD ANALYSIS
+# 7. COGNITIVE LOAD ANALYSIS
 # ============================================
 
 @app.get("/cognitive-load")
-def get_cognitive_load():
+def get_cognitive_load(developer_id: Optional[str] = Query(default=None)):
     if not COGNITIVE_LOAD_FILE.exists():
         return {"error": "Cognitive load report not found"}
 
     df = pl.read_csv(COGNITIVE_LOAD_FILE)
+    dev_id = _normalize_dev_filter(developer_id)
+    if dev_id and "developer_id" in df.columns:
+        df = df.filter(pl.col("developer_id") == dev_id)
 
     return {
         "total_developers": df.height,
@@ -173,15 +203,18 @@ def get_cognitive_load():
     }
 
 # ============================================
-# 9. FLOW-STATE ANALYSIS
+# 8. FLOW-STATE ANALYSIS
 # ============================================
 
 @app.get("/flow-sessions")
-def get_flow_sessions():
+def get_flow_sessions(developer_id: Optional[str] = Query(default=None)):
     if not FLOW_SESSIONS_FILE.exists():
         return {"error": "Flow sessions report not found"}
 
     df = pl.read_csv(FLOW_SESSIONS_FILE)
+    dev_id = _normalize_dev_filter(developer_id)
+    if dev_id and "developer_id" in df.columns:
+        df = df.filter(pl.col("developer_id") == dev_id)
 
     return {
         "total_sessions": df.height,
@@ -189,14 +222,17 @@ def get_flow_sessions():
     }
 
 # ============================================
-# 10. CONTEXT SWITCHING ANALYSIS
+# 9. CONTEXT SWITCHING ANALYSIS
 # ============================================
 
 @app.get("/context-switching")
-def get_context_switching():
+def get_context_switching(developer_id: Optional[str] = Query(default=None)):
     if not CONTEXT_SWITCHING_FILE.exists():
         return []
 
-    data = pl.read_csv(CONTEXT_SWITCHING_FILE)
+    df = pl.read_csv(CONTEXT_SWITCHING_FILE)
+    dev_id = _normalize_dev_filter(developer_id)
+    if dev_id and "developer_id" in df.columns:
+        df = df.filter(pl.col("developer_id") == dev_id)
 
-    return data.to_dicts()
+    return df.to_dicts()
