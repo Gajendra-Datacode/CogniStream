@@ -13,3 +13,5 @@ server.log
 .env
 
 .env
+
+airflow/clickhouse-users-backup/
